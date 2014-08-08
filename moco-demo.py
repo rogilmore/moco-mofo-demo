@@ -30,7 +30,7 @@
 # Import dependencies
 from psychopy import visual, event, core
 from psychopy.tools.coordinatetools import pol2cart, cart2pol
-import numpy, math
+import numpy
 
 #-------------------------------------------------------------------------
 # define functions
@@ -73,7 +73,8 @@ def move_dots( r, th, X, Y, displPerUpdate, dirRads, moveMode ):
 #-------------------------------------------------------------------------
 
 def replot_out_dots( radius, thetaRads, X, Y, spd, dirRads, innerRadius, outerRadius, moveMode, replotMode ):
-        
+    global debugMode
+    
     if not( len(radius)==len(thetaRads)==len(X)==len(Y) ):
         print 'Coordinate vectors not of equal length.'
         return radius, thetaRads, X, Y
@@ -81,8 +82,10 @@ def replot_out_dots( radius, thetaRads, X, Y, spd, dirRads, innerRadius, outerRa
         nDots = len(radius)
     
     # Determine who's out of range
-    outField = (radius >= outerRadius)
-    inField = (radius <= innerRadius)
+    outField = (radius > outerRadius)
+    inField = (radius < innerRadius)
+    if debugMode:
+        print 'Out= ' + str( sum( outField ) ) + '| In= ' + str( sum( inField ) )+ ' | MaxX = ' + str( numpy.max( X ) )  + ' | MinX = ' + str( numpy.min( X ) ) + ' | MinR = ' + str( numpy.min(radius) ) 
         
     # Replot based on replotMode and moveMode
     if replotMode == 'wrap':
@@ -93,11 +96,11 @@ def replot_out_dots( radius, thetaRads, X, Y, spd, dirRads, innerRadius, outerRa
                 radius[ inField ] = outerRadius-.001
         elif (moveMode == 'laminar'):
             if sum( outField ) :
-                thetaRads[outField] += numpy.pi         # Rotate position by pi
-                radius[outField] = outerRadius          # Set inside outerRadius
+                X[outField] = -1.0*X[outField]+spd
+#                Y[outField] = -1.0*Y[outField]
             if sum( inField ) :
-                thetaRads[inField] += numpy.pi
-                radius[inField] = innerRadius
+                X[inField] = -1.0*X[inField]
+#                radius[inField] = innerRadius
         X, Y = pol2cart( thetaRads, radius, units='rads' )
     elif replotMode == 'replot-scaled-polar':
         if sum( outField ):
@@ -107,10 +110,10 @@ def replot_out_dots( radius, thetaRads, X, Y, spd, dirRads, innerRadius, outerRa
     elif replotMode == 'replot-radial':
         if sum( outField ):
             radius[ outField ] = new_radius( sum(outField), 0, outerRadius )
-            thetaRads[ outField ] = numpy.random.rand(sum(outField))*math.pi*2.0
+            thetaRads[ outField ] = numpy.random.rand(sum(outField))*numpy.pi*2.0
         if sum( inField ):
             radius[ inField]  = new_radius( sum(inField), 0, outerRadius )
-            thetaRads[ inField ] = numpy.random.rand(sum(inField))*math.pi*2.0
+            thetaRads[ inField ] = numpy.random.rand(sum(inField))*numpy.pi*2.0
         X, Y = pol2cart(thetaRads, radius, units='rad')
     elif replotMode == 'replot-rect':
         if sum( outField ):
@@ -139,9 +142,9 @@ def show_dots( frames, frameIndex0, dotsRadius, dotsTheta, dotsX, dotsY, refresh
         frameIndex = frameN + frameIndex0
         refreshThese = ( refreshIndex == frameIndex )
         if sum( refreshThese ):
-            dotsRadius[ refreshThese] = new_radius( sum(refreshThese), innerRadius, outerRadius )
-            dotsTheta[ refreshThese ] = numpy.random.rand(sum(refreshThese))*math.pi*2.0
-               
+            dotsRadius[ refreshThese ], dotsTheta[ refreshThese ], dotsX[ refreshThese ], dotsY[ refreshThese ] = make_dots( sum( refreshThese ) )
+            
+
         # move dots
         dotsRadius, dotsTheta, dotsX, dotsY = move_dots( dotsRadius, dotsTheta, dotsX, dotsY, spd, dirRads, moveMode )
             
@@ -168,7 +171,7 @@ def show_dots( frames, frameIndex0, dotsRadius, dotsTheta, dotsX, dotsY, refresh
             
         # flip buffer to display
         if singleFrameMode:
-            msg =  visual.TextStim(win, text=str(frameN), pos=[0,-0.8], color=[1,1,1])
+            msg =  visual.TextStim(win, text=str(frameN), pos=[0.9,-0.9], color=[1,1,1])
             msg.draw()
             k = ['']
             while k[0] not in ['space', 'esc']:   
@@ -237,7 +240,7 @@ def new_radius( nDots, innerRadius, outerRadius ):
 # Constants, display parameters
 
 # Modal flags
-debugMode = 0
+debugMode = 1
 saveMovie = 0
 singleFrameMode = 1
 
@@ -269,7 +272,7 @@ dotSize = .005     # 7 arcmin or 7/60=0.117 deg. 0.117 deg/dot / 24 deg/field di
 sans = ['Gill Sans MT', 'Arial','Helvetica','Verdana'] #use the first font found on this list
 
 # annulus parameters
-innerRadius = 0.1 # Actually 0.19 units in space, but 0.1 for sqrt replot algorithm
+innerRadius = 0.0001 # Actually 0.19 units in space, but 0.1 for sqrt replot algorithm
 outerRadius = 1.0
 
 # Create a window
@@ -280,6 +283,9 @@ win =visual.Window( (windowPix,windowPix), allowGUI=False, color=[-1,-1,-1],
 refreshIndex = numpy.random.random_integers(0,dotLifeFrames-1,nDots)
 
 dotsRadius0, dotsTheta0, dotsX0, dotsY0 = make_dots( nDots ) # Default is uniform in rectangular region
+
+dotsRadius0, dotsTheta0, dotsX0, dotsY0 = replot_out_dots( dotsRadius0, dotsTheta0, dotsX0, dotsY0, dotSpeedUnits, 0.0, 
+                                                       innerRadius, outerRadius, 'linear', 'wrap' )
 
 dots = visual.ElementArrayStim(win, units='norm', elementTex=None, elementMask='circle', fieldShape='circle',
     nElements=nDots, sizes=dotSize, colors=[1,1,1])
@@ -295,33 +301,33 @@ trialClock = core.Clock()
 # Testing different stimulus types
 
 # Radial in/out
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'radial', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
-                                        -1.0*dotSpeedUnits, 0.0, innerRadius, outerRadius, 'radial', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
- 
-
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'radial', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+#                                        -1.0*dotSpeedUnits, 0.0, innerRadius, outerRadius, 'radial', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
+# 
+#
 # rotation-eq-spd  left/right  
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'rotation-eq-spd', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
-                                        -1.0*dotSpeedUnits, 0.0, innerRadius, outerRadius, 'rotation-eq-spd', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
-                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'rotation-eq-spd', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+#                                        -1.0*dotSpeedUnits, 0.0, innerRadius, outerRadius, 'rotation-eq-spd', 'none', 0, singleFrameMode )
+#dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+#                                        dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
 
 # laminar  left/right  
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(50, 0, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
                                         dotSpeedUnits, 0.0, innerRadius, outerRadius, 'laminar', 'wrap', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(50, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
                                         dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius0, dotsTheta0, dotsX0, dotsY0, refreshIndex,
+dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(50, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
                                         -1.0*dotSpeedUnits, 0.0, innerRadius, outerRadius, 'laminar', 'wrap', 0, singleFrameMode )
-dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(halfCycleFrames, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
+dotsRadius, dotsTheta, dotsX, dotsY, lastFrame = show_dots(50, lastFrame, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
                                         dotSpeedUnits, 0.0, innerRadius, outerRadius, 'random', 'none', 0, singleFrameMode )
  
