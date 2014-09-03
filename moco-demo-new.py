@@ -4,12 +4,14 @@
 """
 #-------------------------------------------------------------------------
 #   author: Rick Gilmore, thatrickgilmore@gmail.com
-#   based on starField, captureFrames demos from PsychoPy2
+#   based on starField, captureFrames demos from PsychoPy2 http://www.psychopy.org/
 #
 #   Creates an onscreen display and if saveMovie=True,
 #   writes it to a series of .jpg images that can be 
 #   converted into a movie using MPEG Streamclip or
 #   a similar application.
+#   
+#   repo @ https://github.com/rogilmore/moco-mofo-demo
 
 #-------------------------------------------------------------------------
 # Version history
@@ -21,12 +23,24 @@
 # 2014-08-08    v.06    further refactoring, streamlining. Fixed weird coordinate conversion bug.
 # 2014-09-02    v.07    refactoring to put parameters in params list
 # 2014-09-03    v.08    new function defines, checks dependencies in parameters.
+# 2014-09-03    v.09    new hybrid distribution for uniform circles/rings. fixes 2014-09-03.1
 
 #-------------------------------------------------------------------------
 # Known bugs, desired enhancements
-# 2014-09-03    linear motion in ring should have special replot mode to keep uniform density.
-#               should generate array of motion types for a stimulus cycle, e.g. radial-out, random, radial-in, random.
-#               should print params to separate file for each movie generated.
+# 2014-09-03.1  Fixed in v.09. linear motion in ring should have special replot mode to keep uniform density.
+# 2014-09-03.2  should generate array of motion types for a stimulus cycle, e.g. radial-out, random, radial-in, random.
+# 2014-09-03.3  should print params to separate file for each movie generated.
+# 2014-09-03.4  should check params for consistency whenever they are changed.
+
+#-------------------------------------------------------------------------
+# To use, manipulate the parameters in define_check_params()
+# Laminar flow: 'moveMode' = 'laminar'
+# Radial flow:  'moveMode' = 'radial'
+# Rotational flow: 'moveMode' = 'rotation-eq-spd' for rotational flows with equal local speeds.
+# Change speeds: 'degPerSec' in ['1', '2', '4', '8', '16']
+# Laminar direction: 'laminarDirRads', default = 0
+#
+# Typical cycle consists of motion / random / opposite direction motion / random
 
 #-------------------------------------------------------------------------
 # Import dependencies
@@ -37,6 +51,7 @@ import numpy
 #-------------------------------------------------------------------------
 # define functions
 
+#-------------------------------------------------------------------------
 def move_dots( r, th, X, Y, params ):
     if params['moveMode'] == 'radial': 
         r += params['dotSpeedUnits']
@@ -63,20 +78,6 @@ def move_dots( r, th, X, Y, params ):
 # end def move_dots
 #-------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------
-def out_index( r, th, x, y, params ):
-
-    if ( params['displayRegion'] == 'ring' ):
-        out = any( radius >= params['outerRadiusUnits'], radius <= params['innerRadiusUnits'] )
-    elif ( params['displayRegion'] == 'rect' ):
-        out = sum(X >= params['maxXunits'], Y >= params['maxYunits'], X <= params['minXunits'],Y <= params['minYunits'])
-    else:
-        print "Invalid displayRegionType"
-        out = []
-        
-    return out
-#-------------------------------------------------------------------------
-
 
 #-------------------------------------------------------------------------
 def replot_out_dots( radius, thetaRads, X, Y, params ):
@@ -87,11 +88,13 @@ def replot_out_dots( radius, thetaRads, X, Y, params ):
         inField = (radius <= 0)
         out = outField + inField
     elif ( params['displayRegion'] == 'rect' ):
-        outX = (X >= params['maxXunits'])
-        inX = (X <= params['minXunits'])
-        outY = (Y >= params['maxYunits'])
-        inY = (Y >= params['minYunits'])
-        out = outX + inX + outY + inY
+        gtMaxX = (X >= params['maxXunits'])
+        ltMinX = (X <= params['minXunits'])
+        gtMaxY = (Y >= params['maxYunits'])
+        ltMinY = (Y >= params['minYunits'])
+        outX = ( gtMaxX | ltMinX )
+        outY = ( gtMaxY | gtMaxY )
+        out = ( outX | outY )
     else:
         print "Invalid displayRegion"
    
@@ -106,48 +109,45 @@ def replot_out_dots( radius, thetaRads, X, Y, params ):
                     radius = numpy.mod( radius, params['outerRadiusUnits']  )
                 X, Y = pol2cart( thetaRads, radius, units='rads' )
             elif (params['moveMode'] == 'laminar'):
-                if out.any:
-#                   X = numpy.mod( X - params['minXunits'], params['maxXunits']-params['minXunits']) - params['minXunits'] 
-#                   Y = numpy.mod( Y - params['minYunits'], params['maxYunits']-params['minYunits']) - params['minYunits']
+                if out.any: # mirror reverse X, Y coordinates
                     X[ out ] = -1.0*X[out]
+                    Y[ out ] = -1.0*Y[out]
                 thetaRads, radius = cart2pol( X, Y, units='rad' )
     elif params['replotMode'] == 'replot-scaled-polar':
-        if sum( outField ):
-                radius[outField], thetaRads[outField], X[outField], Y[outField] = make_dots( sum( outField ), min=0., max = params['innerRadiusUnits'], distributionMode = 'scaled-polar' )
-        if sum( inField ):
-            radius[inField], thetaRads[inField], X[inField], Y[inField] = make_dots( sum( inField ), min=params['outerRadiusUnits'], max=params['outerRadiusUnits']+params['dotSpeedUnits'], distributionMode = 'scaled-polar' )
+        if outField.any:
+                radius[outField], thetaRads[outField], X[outField], Y[outField] = make_dots( sum( outField ), params, min=0., max = params['innerRadiusUnits'], distributionMode = 'scaled-polar' )
+        if inField.any:
+            radius[inField], thetaRads[inField], X[inField], Y[inField] = make_dots( sum( inField ), params, min=params['outerRadiusUnits'], max=params['outerRadiusUnits']+params['dotSpeedUnits'], distributionMode = 'scaled-polar' )
 
     elif params['replotMode'] == 'replot-radial':
         if out.any:
-            radius[out] = numpy.random.rand(sum(out))*( params['outerRadiusUnits'] - params['innerRadiusUnits'] )
-        X, Y = pol2cart(thetaRads, radius, units='rad')
+            radius[out], thetaRads[out], X[out], Y[out] = make_dots( sum( out ), params, min=0, max=params['outerRadiusUnits'], distributionMode = 'uniform-polar' )
 
     elif params['replotMode'] == 'replot-rect':
-        if sum( inX, outX ):
-            X[sum( inX, outX )] = numpy.random.rand( sum( inX, outX ) )*( params['maxXunits'] - params['minXunits'] ) - params['minXunits']
-        if sum( inY, outY ):
-            Y[sum(inY, outY)] = numpy.random.rand( sum(inY, outY) )*( params['maxYunits'] - params['minYunits'] ) - params['minYunits']
+        if out.any:
+            radius[out], thetaRads[out], X[out], Y[out] = make_dots( sum( out ), params, min=params['xMinUnits'], max=params['xMaxUnits'], distributionMode='uniform-rect' )
 
         # Convert changed X,Y to polar
         thetaRads, radius = cart2pol( X, Y, units='rad' )
-    
     # end if replotMode
     
     return radius, thetaRads, X, Y
 # end def replot_out_dots
 #-------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------
 def show_dots( frameIndex0, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex, params ):
+    # cycle is defined as full on/off or motion/random pair
     for frameN in range( params['halfCycleFrames'] ):
-        
         # refresh dots
         frameIndex = frameN + frameIndex0
         refreshThese = ( refreshIndex == frameIndex )
         if sum( refreshThese ):
             if ( params['displayRegion'] == 'ring' ):
-                dotsRadius[ refreshThese ], dotsTheta[ refreshThese ], dotsX[ refreshThese ], dotsY[ refreshThese ] = make_dots( sum( refreshThese ), distributionMode='scaled-polar' )
+                dotsRadius[ refreshThese ], dotsTheta[ refreshThese ], dotsX[ refreshThese ], dotsY[ refreshThese ] = make_dots( sum( refreshThese ), params, distributionMode='scaled-polar' )
             else:
-                dotsRadius[ refreshThese ], dotsTheta[ refreshThese ], dotsX[ refreshThese ], dotsY[ refreshThese ] = make_dots( sum( refreshThese ), distributionMode='uniform-rect' )
+                dotsRadius[ refreshThese ], dotsTheta[ refreshThese ], dotsX[ refreshThese ], dotsY[ refreshThese ] = make_dots( sum( refreshThese ), params, distributionMode='uniform-rect' )
          
         # move dots
         dotsRadius, dotsTheta, dotsX, dotsY = move_dots( dotsRadius, dotsTheta, dotsX, dotsY, params )
@@ -171,14 +171,14 @@ def show_dots( frameIndex0, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex, p
         if params['saveMovie']:
             win.getMovieFrame(buffer='back')  
             
-        # flip buffer to display
+        # flip buffer to display unless single frame mode
         if params['singleFrameMode']:
             msg =  visual.TextStim(win, text=str(frameN), pos=[0.9,-0.9], color=[1,1,1])
             msg.draw()
             k = ['']
             while k[0] not in ['space', 'esc']:   
                 k = event.waitKeys()
-        
+
         win.flip()
         
     # end for frameN
@@ -186,7 +186,9 @@ def show_dots( frameIndex0, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex, p
 # end def show_dots
 #-------------------------------------------------------------------------
 
-def make_dots( nDots, min=-1, max=1, distributionMode='uniform-rect' ):
+
+#-------------------------------------------------------------------------
+def make_dots( nDots, params, min=-1, max=1, distributionMode='uniform-rect' ):
     if distributionMode == 'scaled-polar':      # Adjusts for density change due to outward radial motion
         r = numpy.random.rand(nDots)**(0.5)*(max - min) + min
         th = numpy.random.rand(nDots)*(2*numpy.pi)-numpy.pi
@@ -198,17 +200,23 @@ def make_dots( nDots, min=-1, max=1, distributionMode='uniform-rect' ):
     elif distributionMode == 'fixed-circle':
         th = numpy.random.rand(nDots)*(2*numpy.pi)-numpy.pi
         r = numpy.ones(nDots)*.95
-        X, Y = pol2cart( th, r, units='rad' )       
+        X, Y = pol2cart( th, r, units='rad' )
+    elif distributionMode == 'hybrid-uniform-rect-polar': # dots of uniform density in circular region
+        X, Y = numpy.random.rand(nDots)*(max-min)+min, numpy.random.rand(nDots)*(max-min)+min
+        th, r = cart2pol( X, Y, units = 'rad' )
+        outR = ( r >= params['outerRadiusUnits'] )
+        r[ outR ] = numpy.random.rand(sum(outR))*params['outerRadiusUnits']
+        X, Y = pol2cart( th, r, units='rad' )
     else : # default is random in [-1,1] and [-1,1] in Cartesian coordinates
         X, Y = numpy.random.rand( nDots )*(max - min) + min, numpy.random.rand( nDots )*(max - min) + min
         th, r = cart2pol( X, Y, units = 'rad' )
         
     return r, th, X, Y
-
 #-------------------------------------------------------------------------
 
-def define_check_params(params):
 
+#-------------------------------------------------------------------------
+def define_check_params(params):
 # Prespecified params
     params = { 'debugMode': False,
            'saveMovie': False,
@@ -226,7 +234,7 @@ def define_check_params(params):
            'displayRegionTypes' : ['ring','rect'],
            'displayRegionIndex' : 0,
            'maskCenter': True,
-           'showFixation': False,
+           'showFixation': True,
            'minTh': -1.0*numpy.pi,
            'maxTh': numpy.pi,
            'minXunits': -1.,
@@ -239,15 +247,15 @@ def define_check_params(params):
                             '8' : 0.0136,          # 8 deg/s
                             '16' : 0.0272          # 16 deg/s
                           },
-            'degPerSec': '16',
+            'degPerSec': '8',
             'laminarDirRads': 0,
             'movieTypes': ['radial', 'rotation', 'laminar'],
-            'movieTypeIndex': 0,
+            'movieTypeIndex': 2,
             'moveModes' : ['radial', 'rotation-eq-spd', 'rotation-eq-angle', 'laminar', 'random'],
-            'moveModeIndex': 0,
+            'moveModeIndex': 1,
             'replotModes': ['wrap', 'replot-scaled-polar', 'replot-radial', 'replot-rect'],
             'replotModeIndex': 0, # wrap is default
-            'distributionModes': ['uniform-rect', 'scaled-polar', 'uniform-polar', 'fixed-circle'],
+            'distributionModes': ['uniform-rect', 'scaled-polar', 'uniform-polar', 'fixed-circle', 'hybrid-uniform-rect-polar'],
             'distributionModeIndex': 1
          }
 
@@ -293,7 +301,7 @@ def define_check_params(params):
     if params['displayRegion'] == 'ring':
         params['nDots'] = int( params['dotDensity'] * params['maxDotsRing'] )
         if params['moveMode'] == 'laminar':
-            params['distributionModeIndex'] = 1 # 'scaled-polar'?
+            params['distributionModeIndex'] = 4 # 'hybrid-uniform-rect-polar'
             params['dotDistributionMode'] = params['distributionModes'][ params['distributionModeIndex'] ]
 
             params['replotModeIndex'] = 0 # wrap
@@ -345,8 +353,8 @@ def define_check_params(params):
             params['replotMode'] = params['replotModes'][ params['replotModeIndex'] ]
 
     return params
-
 #-------------------------------------------------------------------------
+
 
 #-------------------------------------------------------------------------
 # main program
@@ -365,7 +373,7 @@ win = visual.Window( ( params['windowPix'],params['windowPix'] ), allowGUI=False
 # Create dot positions, stimuli
 refreshIndex = numpy.random.random_integers( 0, params['dotLifeFrames']-1, params['nDots'] )
 
-dotsRadius0, dotsTheta0, dotsX0, dotsY0 = make_dots( params['nDots'], distributionMode=params['dotDistributionMode'] )
+dotsRadius0, dotsTheta0, dotsX0, dotsY0 = make_dots( params['nDots'], params, distributionMode=params['dotDistributionMode'] )
 dotsRadius0, dotsTheta0, dotsX0, dotsY0 = replot_out_dots( dotsRadius0, dotsTheta0, dotsX0, dotsY0, params )
 
 # Make dot array, fixation, other stims
@@ -381,7 +389,7 @@ trialClock = core.Clock()
 
 # Initialize before loop
 dotsRadius, dotsTheta, dotsX, dotsY = dotsRadius0, dotsTheta0, dotsX0, dotsY0
-lf = 0 # lastFrame
+lf = 0 # lastFrame index to pass between stimulus segments
 
 for l in range( params['nMovieLoops'] ):
 
@@ -401,10 +409,9 @@ for l in range( params['nMovieLoops'] ):
     params['moveMode'] = 'random'
     dotsRadius, dotsTheta, dotsX, dotsY, lf = show_dots(lf, dotsRadius, dotsTheta, dotsX, dotsY, refreshIndex,
                                             params )
-
 # Save movie
 if params['saveMovie']:
-    print "Saving movie frames to %s as set of jpg files." % movieName
+    print "Saving movie frames to jpg/%s as set of jpg files." % movieName
     win.saveMovieFrames(params['movieName'])
-
-
+#-------------------------------------------------------------------------
+ 
