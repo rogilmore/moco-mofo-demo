@@ -28,13 +28,14 @@
 # 2014-09-02    v.07    refactoring to put parameters in params list
 # 2014-09-03    v.08    new function defines, checks dependencies in parameters.
 # 2014-09-03    v.09    new hybrid distribution for uniform circles/rings. fixes 2014-09-03.1
+# 2014-10-30    v.10    added ability to control coherence within flows. fixes 2014-10-30.1
 
 #-------------------------------------------------------------------------
 # Known bugs, desired enhancements
-# 2014-09-03.1  Fixed in v.09. linear motion in ring should have special replot mode to keep uniform density.
 # 2014-09-03.2  should generate array of motion types for a stimulus cycle, e.g. radial-out, random, radial-in, random.
 # 2014-09-03.3  should print params to separate file for each movie generated.
 # 2014-09-03.4  should check params for consistency whenever they are changed.
+# 2014-10-30.2  show side by side displays like psychophysics? Or, just merge image arrays in Matlab?
 
 #-------------------------------------------------------------------------
 # To use, manipulate the parameters in define_check_params()
@@ -43,6 +44,7 @@
 # Rotational flow: 'moveMode' = 'rotation-eq-spd' for rotational flows with equal local speeds.
 # Change speeds: 'degPerSec' in ['1', '2', '4', '8', '16']
 # Laminar direction: 'laminarDirRads', default = 0
+# Proportion of coherent dots: 'pCoherent' in [0,1]
 #
 # Typical cycle consists of motion / random / opposite direction motion / random
 
@@ -57,20 +59,61 @@ import numpy
 
 #-------------------------------------------------------------------------
 def move_dots( r, th, X, Y, params ):
-    if params['moveMode'] == 'radial': 
-        r += params['dotSpeedUnits']
-        X, Y = pol2cart(th, r, units='rad')
+    if params['moveMode'] == 'radial':
+        # Coherent 
+        r[ params['cohIndex'] ] += params['dotSpeedUnits']
+        X[ params['cohIndex'] ], Y[ params['cohIndex'] ] = pol2cart(th[ params['cohIndex'] ], r[ params['cohIndex'] ], units='rad')
+
+        # Incoherent
+        if params['nDots'] > params['nCoherent']:
+            inCohIndex = numpy.invert( params['cohIndex'] )
+            dTheta = numpy.random.rand(params['nDots']-params['nCoherent'])*numpy.pi*2.0
+            X[ inCohIndex ] += params['dotSpeedUnits']*numpy.cos( dTheta )
+            Y[ inCohIndex ] += params['dotSpeedUnits']*numpy.sin( dTheta )
+            th[ inCohIndex ], r[ inCohIndex ] = cart2pol( X[ inCohIndex ], Y[ inCohIndex ], units ='rad' )
+        # Normalize Cartesian and Polar coordinates
+        # X, Y = pol2cart(th, r, units='rad')
     elif params['moveMode'] == 'rotation-eq-angle':
-        th += params['dotSpeedUnits']
-        X, Y = pol2cart(th, r, units='rad')
+        # Coherent
+        th[ params['cohIndex'] ] += params['dotSpeedUnits']
+        X[ params['cohIndex'] ], Y[ params['cohIndex'] ] = pol2cart(th[ params['cohIndex'] ], r[ params['cohIndex'] ], units='rad')
+        
+        # Incoherent
+        if params['nDots'] > params['nCoherent']:
+            inCohIndex = numpy.invert( params['cohIndex'] )
+            dTheta = numpy.random.rand(params['nDots']-params['nCoherent'])*numpy.pi*2.0
+            X[ inCohIndex ] += params['dotSpeedUnits']*numpy.cos( dTheta )
+            Y[ inCohIndex ] += params['dotSpeedUnits']*numpy.sin( dTheta )
+            th[ inCohIndex ], r[ inCohIndex ] = cart2pol( X[ inCohIndex ], Y[ inCohIndex ], units ='rad' )
+            
     elif params['moveMode'] == 'rotation-eq-spd':
-        X += params['dotSpeedUnits']*numpy.sin( numpy.pi - th )
-        Y += params['dotSpeedUnits']*numpy.cos( numpy.pi - th )
-        th, r = cart2pol( X, Y, units ='rad' )
-    elif params['moveMode'] == 'laminar': 
-        X += params['dotSpeedUnits']*numpy.cos( params['laminarDirRads'] )
-        Y += params['dotSpeedUnits']*numpy.sin( params['laminarDirRads'] )
-        th, r = cart2pol( X, Y, units ='rad' )
+        # Coherent
+        X[ params['cohIndex'] ] += params['dotSpeedUnits']*numpy.sin( numpy.pi - th[ params['cohIndex'] ] )
+        Y[ params['cohIndex'] ] += params['dotSpeedUnits']*numpy.cos( numpy.pi - th[ params['cohIndex'] ] )
+        th[ params['cohIndex'] ], r[ params['cohIndex'] ] = cart2pol( X[ params['cohIndex'] ], Y[ params['cohIndex'] ], units ='rad' )
+        
+        # Incoherent
+        if params['nDots'] > params['nCoherent']:
+            inCohIndex = numpy.invert( params['cohIndex'] )
+            dTheta = numpy.random.rand(params['nDots']-params['nCoherent'])*numpy.pi*2.0
+            X[ inCohIndex ] += params['dotSpeedUnits']*numpy.cos( dTheta )
+            Y[ inCohIndex ] += params['dotSpeedUnits']*numpy.sin( dTheta )
+            th[ inCohIndex ], r[ inCohIndex ] = cart2pol( X[ inCohIndex ], Y[ inCohIndex ], units ='rad' )
+
+    elif params['moveMode'] == 'laminar':
+        # Coherent
+        X[ params['cohIndex'] ] += params['dotSpeedUnits']*numpy.cos( params['laminarDirRads'] )
+        Y[ params['cohIndex'] ] += params['dotSpeedUnits']*numpy.sin( params['laminarDirRads'] )
+        th[ params['cohIndex'] ], r[ params['cohIndex'] ] = cart2pol( X[ params['cohIndex'] ], Y[ params['cohIndex'] ], units ='rad' )
+        
+        # Incoherent
+        if params['nDots'] > params['nCoherent']:
+            inCohIndex = numpy.invert( params['cohIndex'] )
+            dTheta = numpy.random.rand(params['nDots']-params['nCoherent'])*numpy.pi*2.0
+            X[ inCohIndex ] += params['dotSpeedUnits']*numpy.cos( dTheta )
+            Y[ inCohIndex ] += params['dotSpeedUnits']*numpy.sin( dTheta )
+            th[ inCohIndex ], r[ inCohIndex ] = cart2pol( X[ inCohIndex ], Y[ inCohIndex ], units ='rad' )
+       
     elif params['moveMode'] == 'random':
         dTheta = numpy.random.rand(params['nDots'])*numpy.pi*2.0
         X += params['dotSpeedUnits']*numpy.cos( dTheta )
@@ -256,7 +299,8 @@ def define_check_params(params):
             'movieTypes': ['radial', 'rotation', 'laminar'],
             'movieTypeIndex': 2,
             'moveModes' : ['radial', 'rotation-eq-spd', 'rotation-eq-angle', 'laminar', 'random'],
-            'moveModeIndex': 1,
+            'moveModeIndex': 3,
+            'pCoherent': 0.8,
             'replotModes': ['wrap', 'replot-scaled-polar', 'replot-radial', 'replot-rect'],
             'replotModeIndex': 0, # wrap is default
             'distributionModes': ['uniform-rect', 'scaled-polar', 'uniform-polar', 'fixed-circle', 'hybrid-uniform-rect-polar'],
@@ -355,6 +399,15 @@ def define_check_params(params):
             
             params['replotModeIndex'] = 2 # replot-radial
             params['replotMode'] = params['replotModes'][ params['replotModeIndex'] ]
+
+    # Boolean index to select coherently moving dots
+    if params['pCoherent'] > 1.0:
+        params['pCoherent'] = 1.0
+    elif params['pCoherent'] < 0.0:
+        params['pCoherent'] = 0.0
+
+    params['cohIndex'] = ( numpy.random.rand(params['nDots']) <= params['pCoherent'] )
+    params['nCoherent'] = sum( params['cohIndex'] )
 
     return params
 #-------------------------------------------------------------------------
