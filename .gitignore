@@ -1,0 +1,21 @@
+# Compiled Source #
+###################
+*.pyc
+
+# OS Generated Files #
+######################
+.DS_Store
+.DS_Store?
+.Trashes
+
+# Backup Files #
+################
+*.m~
+
+# Project-specific Directories #
+################################
+./jpg
+./mp4
+./png
+
+
